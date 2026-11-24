@@ -1,5 +1,6 @@
 use crate::csaf::types::csaf_datetime::CsafDateTime;
-use chrono::NaiveDate;
+use jiff::ZonedDateTime;
+use jiff::civil::{Date, date};
 use rust_embed::RustEmbed;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -20,7 +21,7 @@ pub struct CweData {
 
 /// A single CWE version's release date and its entries.
 pub struct CweVersionData {
-    pub release_date: NaiveDate,
+    pub release_date: ZonedDateTime,
     pub entries: HashMap<String, CweData>,
 }
 
@@ -41,9 +42,11 @@ pub static CWE_ENTRIES: LazyLock<CweVersionLookup> = LazyLock::new(|| {
             let version_parts = version_and_date.split("_").collect::<Vec<&str>>();
             let version = version_parts[0];
             let release_date = match version_parts[1] {
-                "" => NaiveDate::from_ymd_opt(1970, 1, 1).expect("Fallback date should be valid."),
-                date_str => NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-                    .expect("Date part of filenames in assets/cwe should be in 'YYYY-MM-DD' format."),
+                "" => date(1970, 1, 1).in_tz("UTC").expect("Date should always be valid"),
+                date_str => Date::strptime("%Y-%m-%d", date_str)
+                    .expect("Date part of filenames in assets/cwe should be in 'YYYY-MM-DD' format.")
+                    .in_tz("UTC")
+                    .expect("Date should always be valid"),
             };
             let mut entries: HashMap<String, CweData> = HashMap::new();
             let content =
@@ -72,12 +75,12 @@ pub static CWE_ENTRIES: LazyLock<CweVersionLookup> = LazyLock::new(|| {
 
 pub fn get_latest_cwe_version_for_date(date: &CsafDateTime) -> Option<&'static String> {
     // Convert to a date (UTC) and compare against the release dates stored in the CWE assets.
-    let doc_date: NaiveDate = match date {
-        CsafDateTime::Valid(v) => v.get_as_utc().date_naive(),
+    let doc_date = match date {
+        CsafDateTime::Valid(v) => v.get_as_utc(),
         _ => return None,
     };
 
-    let mut latest: Option<(&'static String, &NaiveDate)> = None;
+    let mut latest: Option<(&'static String, &ZonedDateTime)> = None;
 
     for (version, version_data) in CWE_ENTRIES.iter() {
         if version_data.release_date <= doc_date && latest.as_ref().is_none_or(|l| version_data.release_date > *l.1) {
